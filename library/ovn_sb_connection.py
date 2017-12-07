@@ -15,61 +15,71 @@
 #     limitations under the License.
 
 import traceback
+import six
 
 from ansible.module_utils.openvswitch import (
-    NB_CTL,
-    NB_SCHEMA,
-    LOGICAL_SWITCH,
+    SB_CTL,
+    SB_SCHEMA,
+    SB_GLOBAL,
+    CONNECTION,
     find_row,
     make_module,
 )
 
 fields = {
-    'name': {"required": True, 'type': "str"},
+    'target': {"required": True, 'type': "str"},
     'state': {
         "default": "present",
     },
 }
 
 def register_interest(schema):
-    schema.register_columns(LOGICAL_SWITCH, ['name'])
+    schema.register_columns(CONNECTION, ['target'])
+    schema.register_columns(SB_GLOBAL, ['connections'])
 
 
-def switch_exists(module, idl, exit_if_present):
-    has_requested_switch = lambda row: row.name == module.params['name']
-    row = find_row(idl, LOGICAL_SWITCH, has_requested_switch)
-    if row:
-        module._ovs_vars['switch'] = row
-    if not (bool(row) ^ exit_if_present):
+def connection_exists(module, idl, exit_if_present):
+    has_target = lambda row: row.target == module.params['target']
+    connection = find_row(idl, CONNECTION, has_target)
+    if connection:
+        module._ovs_vars['connection'] = connection
+    if not (bool(connection) ^ exit_if_present):
         module.exit_json(changed=False)
 
 
 def prepare_present(module, idl):
-    switch_exists(module, idl, exit_if_present=True)
+    connection_exists(module, idl, exit_if_present=True)
 
 
 def prepare_absent(module, idl):
-    switch_exists(module, idl, exit_if_present=False)
+    connection_exists(module, idl, exit_if_present=False)
 
 
-def add_switch(module, idl, txn):
-    table = idl.tables.get(LOGICAL_SWITCH)
-    switch = txn.insert(table)
-    switch.name = module.params['name']
+def add_connection(module, idl, txn):
+    table = idl.tables.get(CONNECTION)
+    conn = txn.insert(table)
+    conn.target = module.params['target']
+    sb_global = idl.tables.get(SB_GLOBAL)
+    sb_config = six.next(six.itervalues(sb_global.rows))
+    sb_config.addvalue('connections', conn.uuid)
 
 
-def remove_switch(module, idl, txn):
-    module._ovs_vars['switch'].delete()
+def remove_connection(module, idl, txn):
+    conn = module._ovs_vars['connection']
+    sb_global = idl.tables.get(SB_GLOBAL)
+    sb_config = six.next(six.itervalues(sb_global.rows))
+    sb_config.delvalue('connections', conn.uuid)
+    conn.delete()
 
 
 def create_failure_msg(module):
-    return 'Failed to create logical switch {}'.format(module.params['name'])
+    return 'Failed to create connection {}'.format(module.params['target'])
 
 
 def remove_failure_msg(module):
-    return 'Failed to delete logical switch {}({})'.format(
-        module.params['name'],
-        module._ovs_vars['switch'].uuid,
+    return 'Failed to delete connection {}({})'.format(
+        module.params['target'],
+        module._ovs_vars['connection'].uuid,
     )
 
 
@@ -77,19 +87,19 @@ run_module = make_module(
     argument_spec=fields,
     states=['present', 'absent'],
     supports_check_mode=True,
-    schema_file=NB_SCHEMA,
-    ctl=NB_CTL,
+    schema_file=SB_SCHEMA,
+    ctl=SB_CTL,
     ops={
         'present': {
             'register_interest': register_interest,
             'prepare': prepare_present,
-            'build_txn': add_switch,
+            'build_txn': add_connection,
             'txn_failure_msg': create_failure_msg,
         },
         'absent': {
             'register_interest': register_interest,
             'prepare': prepare_absent,
-            'build_txn': remove_switch,
+            'build_txn': remove_connection,
             'txn_failure_msg': remove_failure_msg,
         },
     },

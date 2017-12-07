@@ -1,4 +1,18 @@
 #!/usr/bin/python
+#
+# Copyright (c), Roman Bolshakov <roolebo@gmail.com>, 2017
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
 
 import traceback
 
@@ -12,8 +26,8 @@ from ansible.module_utils.openvswitch import (
 )
 
 fields = {
-    'name': {"required": True, type: "str"},
-    'switch': {"required": True, type: "str"},
+    'name': {"required": True, 'type': "str"},
+    'switch': {"required": True, 'type': "str"},
     'type': {
         "choices": [
             '',
@@ -24,11 +38,15 @@ fields = {
             'vtep',
         ],
         'default': '',
-        type: "str",
+        'type': "str",
     },
     'addresses': {
         'default': [],
-        type: 'list',
+        'type': 'list',
+    },
+    'options': {
+        'default': [],
+        'type': 'dict',
     },
     'state': {
         "default": "present",
@@ -38,6 +56,7 @@ fields = {
 props = [
     'type',
     'addresses',
+    'options',
 ]
 
 def register_interest(schema):
@@ -64,13 +83,6 @@ def prepare_present(module, idl):
         module._ovs_vars['port'] = port
         if port in switch.ports:
             for prop in props:
-                module.log('prop {}, current: {}({}), requested: {}({})'.format(
-                    prop,
-                    getattr(port, prop),
-                    type(getattr(port, prop)),
-                    module.params[prop],
-                    type(module.params[prop]),
-                ))
                 if getattr(port, prop) != module.params[prop]:
                     break
             else:
@@ -87,6 +99,11 @@ def prepare_absent(module, idl):
     port_exists(module, idl, exit_if_present=False)
 
 
+def set_props_from_args(entity, props, module):
+    for prop in props:
+        setattr(entity, prop, module.params[prop])
+
+
 def configure_port(module, idl, txn):
     switch = module._ovs_vars['switch']
     if module._ovs_vars.get('should_add'):
@@ -94,11 +111,11 @@ def configure_port(module, idl, txn):
         port = txn.insert(table)
         port.name = module.params['name']
         switch.addvalue('ports', port.uuid)
+        set_props_from_args(port, props, module)
     else:
         port = module._ovs_vars['port']
         if module._ovs_vars.get('should_reconfigure'):
-            for prop in props:
-                setattr(port, prop, module.params[prop])
+            set_props_from_args(port, props, module)
 
 
 def remove_port(module, idl, txn):
@@ -106,7 +123,7 @@ def remove_port(module, idl, txn):
 
 
 def create_failure_msg(module):
-    op = 'add' if module._ovs_vars['port'] is None else 'update'
+    op = 'add' if module._ovs_vars.get('should_add') else 'update'
     return 'Failed to {} port {}'.format(op, module.params['name'])
 
 
@@ -130,7 +147,7 @@ run_module = make_module(
             'register_interest': register_interest,
             'prepare': prepare_present,
             'build_txn': configure_port,
-#            'txn_failure_msg': create_failure_msg,
+            'txn_failure_msg': create_failure_msg,
         },
         'absent': {
             'register_interest': register_interest,

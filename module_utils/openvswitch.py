@@ -1,3 +1,18 @@
+# Copyright (c), Red Hat, Inc., 2016
+# Copyright (c), Roman Bolshakov <roolebo@gmail.com>, 2017
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import time
 import traceback
 import six
@@ -26,8 +41,11 @@ OVS_CTL      = 'db.sock'
 OVS_DB       = 'Open_vSwitch'
 OVS_SCHEMA   = 'vswitch.ovsschema'
 
-LOGICAL_SWITCH = 'Logical_Switch'
+LOGICAL_SWITCH      = 'Logical_Switch'
 LOGICAL_SWITCH_PORT = 'Logical_Switch_Port'
+OPEN_VSWITCH        = 'Open_vSwitch'
+SB_GLOBAL           = 'SB_Global'
+CONNECTION          = 'Connection'
 
 
 def wait_for_db_change(idl):
@@ -108,19 +126,22 @@ def make_module(
                     elif status != Transaction.TRY_AGAIN:
                         break
 
-            if status == Transaction.SUCCESS:
-                changed = True
-            elif status == Transaction.UNCHANGED:
-                changed = False
+                if status == Transaction.SUCCESS:
+                    changed = True
+                elif status == Transaction.UNCHANGED:
+                    changed = False
+                else:
+                    msg = op['txn_failure_msg'](module)
+                    module.fail_json(msg='{}: {}'.format(msg, status))
             else:
-                msg = op['txn_failure_msg'](module)
-                module.fail_json(msg='{}: {}'.format(msg, status))
+                changed = True
 
             module.exit_json(changed=changed)
         except Exception as e:
             module.fail_json(msg=str(e), exception=traceback.format_exc())
         finally:
-            idl.close()
+            if 'idl' in locals():
+                idl.close()
 
     return ovs_run_module
 
