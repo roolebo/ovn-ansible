@@ -45,7 +45,7 @@ fields = {
         'type': 'list',
     },
     'options': {
-        'default': [],
+        'default': {},
         'type': 'dict',
     },
     'state': {
